@@ -155,11 +155,14 @@ public class MainActivity extends Activity {
                 + "\nSSH: " + sshCommand(vm)
                 + (vm.httpsUrl == null || vm.httpsUrl.isEmpty() ? "" : "\nHTTPS: " + vm.httpsUrl);
         row.addView(Ui.text(this, info, 14, p.muted, Typeface.NORMAL));
+        row.addView(Ui.text(this, "HTTPS opens exe.dev's default web preview, which dials port 8000. If you see 'Port 8000 unbound', start a web server on the VM first. The quick nginx button below installs/enables nginx for a basic test page.", 13, p.muted, Typeface.NORMAL));
         Button copySsh = Ui.button(this, "Copy SSH command", true);
-        Button openWeb = Ui.button(this, "Open HTTPS URL", false);
+        Button startNginx = Ui.button(this, "Start nginx on VM", false);
+        Button openWeb = Ui.button(this, "Open HTTPS preview", false);
         Button details = Ui.button(this, "Copy VM JSON", false);
-        row.addView(copySsh); row.addView(openWeb); row.addView(details);
+        row.addView(copySsh); row.addView(startNginx); row.addView(openWeb); row.addView(details);
         copySsh.setOnClickListener(v -> copy("SSH command", sshCommand(vm)));
+        startNginx.setOnClickListener(v -> startNginx(vm));
         openWeb.setOnClickListener(v -> {
             if (vm.httpsUrl == null || vm.httpsUrl.isEmpty()) Toast.makeText(this, "This VM has no HTTPS URL in the API response.", Toast.LENGTH_LONG).show();
             else startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(vm.httpsUrl)));
@@ -176,6 +179,19 @@ public class MainActivity extends Activity {
         String cmd = ApiClient.buildNewCommand(r);
         runTask("Creating VM with: " + cmd, () -> new ApiClient(this).exec(cmd), result -> {
             setStatus("Create VM response: " + shorten(result, 260));
+            refreshVms();
+        });
+    }
+
+    private void startNginx(ApiClient.Vm vm) {
+        String target = sshTarget(vm);
+        if (target.isEmpty()) {
+            setStatus("Cannot start nginx: this VM has no name or SSH destination in the API response.");
+            return;
+        }
+        String cmd = "ssh " + ApiClient.shellQuote(target) + " sudo systemctl enable --now nginx";
+        runTask("Starting nginx on " + target + "...", () -> new ApiClient(this).exec(cmd), result -> {
+            setStatus("nginx start command finished. Now tap Open HTTPS preview. Response: " + shorten(result, 220));
             refreshVms();
         });
     }
@@ -203,9 +219,15 @@ public class MainActivity extends Activity {
     }
 
     private String sshCommand(ApiClient.Vm vm) {
-        if (vm.sshDest != null && !vm.sshDest.isEmpty()) return "ssh " + vm.sshDest;
-        if (vm.name != null && !vm.name.isEmpty()) return "ssh exe.dev ssh " + vm.name;
+        String target = sshTarget(vm);
+        if (!target.isEmpty()) return "ssh " + target;
         return "ssh exe.dev";
+    }
+
+    private String sshTarget(ApiClient.Vm vm) {
+        if (vm.sshDest != null && !vm.sshDest.isEmpty()) return vm.sshDest;
+        if (vm.name != null && !vm.name.isEmpty()) return vm.name;
+        return "";
     }
 
     private void copy(String label, String value) {

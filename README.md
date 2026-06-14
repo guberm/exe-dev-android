@@ -10,6 +10,8 @@ A small native Android client for [exe.dev](https://exe.dev/) with an English UI
 - Create a new VM using the documented `new` command.
 - Copy SSH connection commands for existing VMs.
 - Open VM HTTPS URLs when the API returns one.
+- Explain exe.dev's default port 8000 preview behavior.
+- Start nginx on a VM as a quick way to bind port 8000 for the default HTTPS preview page.
 - Includes a custom vector/adaptive launcher icon.
 
 ## Authentication
