@@ -1,6 +1,7 @@
 package dev.guber.exedev;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -212,9 +213,31 @@ public class MainActivity extends Activity {
                 String result = supplier.get();
                 main.post(() -> consumer.accept(result));
             } catch (Exception e) {
-                main.post(() -> setStatus("Error: " + e.getMessage()));
+                main.post(() -> {
+                    String formatted = formatError(e);
+                    setStatus("Error: " + formatted);
+                    showPopup("Action failed", formatted);
+                });
             }
         });
+    }
+
+    private String formatError(Exception e) {
+        if (e instanceof ApiClient.ApiException) {
+            ApiClient.ApiException api = (ApiClient.ApiException) e;
+            if (api.statusCode == 403) {
+                return "HTTP 403: this token is not allowed to run that exe.dev command.\n\nFor the port 8000 preview helper, generate a new token with the ssh command allowed:\n\nssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new,ssh --exp=30d\n\nThen paste it in Login / Settings.";
+            }
+        }
+        return e.getMessage() == null ? e.toString() : e.getMessage();
+    }
+
+    private void showPopup(String title, String message) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     private void setStatus(String value) { if (status != null) status.setText(value); }

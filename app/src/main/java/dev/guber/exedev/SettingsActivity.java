@@ -1,6 +1,7 @@
 package dev.guber.exedev;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -23,7 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class SettingsActivity extends Activity {
-    private static final String TOKEN_COMMAND = "ssh exe.dev ssh-key generate-api-key --exp=30d";
+    private static final String TOKEN_COMMAND = "ssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new,ssh --exp=30d";
     private static final String API_DOCS_URL = "https://exe.dev/docs/https-api";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -119,11 +120,15 @@ public class SettingsActivity extends Activity {
     private void testLogin() {
         String tokenValue = token.getText() == null ? "" : token.getText().toString().trim();
         if (tokenValue.isEmpty()) {
-            status.setText("Paste your exe.dev bearer token first. Use the command in Step 1 to generate it.");
+            String message = "Paste your exe.dev bearer token first. Use the command in Step 1 to generate it.";
+            status.setText(message);
+            showPopup("Token required", message);
             return;
         }
         if (!tokenValue.startsWith("exe")) {
-            status.setText("This does not look like an exe.dev token. Tokens normally start with exe1. or exe0.");
+            String message = "This does not look like an exe.dev token. Tokens normally start with exe1. or exe0.";
+            status.setText(message);
+            showPopup("Invalid token", message);
             return;
         }
         status.setText("Testing login with whoami...");
@@ -132,7 +137,11 @@ public class SettingsActivity extends Activity {
                 String response = new ApiClient(this).whoami();
                 main.post(() -> status.setText("Login OK. You can go back and manage VMs. Response: " + abbreviate(response, 220)));
             } catch (Exception e) {
-                main.post(() -> status.setText("Login failed: " + e.getMessage() + "\n\nCheck the token, endpoint, and token permissions."));
+                main.post(() -> {
+                    String message = formatError(e);
+                    status.setText("Login failed: " + message);
+                    showPopup("Login failed", message);
+                });
             }
         });
     }
@@ -141,6 +150,24 @@ public class SettingsActivity extends Activity {
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         cm.setPrimaryClip(ClipData.newPlainText(label, value));
         Toast.makeText(this, label + " copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private String formatError(Exception e) {
+        if (e instanceof ApiClient.ApiException) {
+            ApiClient.ApiException api = (ApiClient.ApiException) e;
+            if (api.statusCode == 403) {
+                return "HTTP 403: this token is valid, but it is not allowed to run the requested exe.dev command. Generate a new token with the command shown in Step 1, then paste it here.";
+            }
+        }
+        return (e.getMessage() == null ? e.toString() : e.getMessage()) + "\n\nCheck the token, endpoint, and token permissions.";
+    }
+
+    private void showPopup(String title, String message) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     private static String abbreviate(String text, int max) {

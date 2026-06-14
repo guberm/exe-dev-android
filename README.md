@@ -23,7 +23,7 @@ The Android app includes a 3-step login wizard:
 1. On a trusted computer where `ssh exe.dev` works, run:
 
    ```bash
-   ssh exe.dev ssh-key generate-api-key --exp=30d
+   ssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new,ssh --exp=30d
    ```
 
 2. Copy the returned token. It usually starts with `exe1.` or `exe0.`. Treat it like a password.
@@ -34,6 +34,9 @@ For least privilege, create short-lived tokens and restrict commands if you do n
 - `whoami` for login testing
 - `ls` for VM listing
 - `new` for VM creation
+- `ssh` for the optional **Start port 8000 preview server** helper on an existing VM
+
+If you already generated an older token without `ssh`, VM listing and creation may still work, but the preview helper will show HTTP 403. Generate a new token with the command above and paste it into **Login / Settings**.
 
 ## Build
 
