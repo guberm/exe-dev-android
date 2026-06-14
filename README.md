@@ -14,13 +14,18 @@ A small native Android client for [exe.dev](https://exe.dev/) with an English UI
 
 ## Authentication
 
-exe.dev does not expose a conventional username/password mobile login flow. Its official API uses SSH commands or HTTPS bearer tokens. Create a token on a trusted computer:
+exe.dev does not expose a conventional username/password mobile login flow. Its official API uses SSH commands or HTTPS bearer tokens.
 
-```bash
-ssh exe.dev ssh-key generate-api-key --exp=30d
-```
+The Android app includes a 3-step login wizard:
 
-Then paste the returned bearer token into the app's **Login / Settings** screen.
+1. On a trusted computer where `ssh exe.dev` works, run:
+
+   ```bash
+   ssh exe.dev ssh-key generate-api-key --exp=30d
+   ```
+
+2. Copy the returned token. It usually starts with `exe1.` or `exe0.`. Treat it like a password.
+3. In the Android app, open **Login / Settings**, paste the token, keep the default endpoint `https://exe.dev/exec`, and tap **Save and test login**.
 
 For least privilege, create short-lived tokens and restrict commands if you do not need full defaults. The app needs these exe.dev commands for the main workflow:
 
