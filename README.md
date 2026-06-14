@@ -1,0 +1,47 @@
+# exe.dev Android
+
+A small native Android client for [exe.dev](https://exe.dev/) with an English UI.
+
+## Features
+
+- Log in with an exe.dev HTTPS API bearer token.
+- Test the account with `whoami`.
+- List existing VMs via the official `POST https://exe.dev/exec` API.
+- Create a new VM using the documented `new` command.
+- Copy SSH connection commands for existing VMs.
+- Open VM HTTPS URLs when the API returns one.
+- Includes a custom vector/adaptive launcher icon.
+
+## Authentication
+
+exe.dev does not expose a conventional username/password mobile login flow. Its official API uses SSH commands or HTTPS bearer tokens. Create a token on a trusted computer:
+
+```bash
+ssh exe.dev ssh-key generate-api-key --exp=30d
+```
+
+Then paste the returned bearer token into the app's **Login / Settings** screen.
+
+For least privilege, create short-lived tokens and restrict commands if you do not need full defaults. The app needs these exe.dev commands for the main workflow:
+
+- `whoami` for login testing
+- `ls` for VM listing
+- `new` for VM creation
+
+## Build
+
+```bash
+ANDROID_HOME=$HOME/Android/Sdk ./gradlew :app:assembleDebug --console=plain --no-daemon
+```
+
+The debug APK is generated at:
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+## Notes
+
+- Tokens are stored in Android `SharedPreferences` on the device.
+- The app does not include, generate, or commit any exe.dev token.
+- Interactive SSH is intentionally delegated to Android SSH clients by copying the SSH command; Android does not include a built-in SSH terminal.
