@@ -155,14 +155,14 @@ public class MainActivity extends Activity {
                 + "\nSSH: " + sshCommand(vm)
                 + (vm.httpsUrl == null || vm.httpsUrl.isEmpty() ? "" : "\nHTTPS: " + vm.httpsUrl);
         row.addView(Ui.text(this, info, 14, p.muted, Typeface.NORMAL));
-        row.addView(Ui.text(this, "HTTPS opens exe.dev's default web preview, which dials port 8000. If you see 'Port 8000 unbound', start a web server on the VM first. The quick nginx button below installs/enables nginx for a basic test page.", 13, p.muted, Typeface.NORMAL));
+        row.addView(Ui.text(this, "HTTPS opens exe.dev's default web preview, which dials port 8000. If you see 'Port 8000 unbound', start a web server on the VM first. The preview-server button below creates a tiny systemd service that serves a basic test page on port 8000.", 13, p.muted, Typeface.NORMAL));
         Button copySsh = Ui.button(this, "Copy SSH command", true);
-        Button startNginx = Ui.button(this, "Start nginx on VM", false);
+        Button startPreview = Ui.button(this, "Start port 8000 preview server", false);
         Button openWeb = Ui.button(this, "Open HTTPS preview", false);
         Button details = Ui.button(this, "Copy VM JSON", false);
-        row.addView(copySsh); row.addView(startNginx); row.addView(openWeb); row.addView(details);
+        row.addView(copySsh); row.addView(startPreview); row.addView(openWeb); row.addView(details);
         copySsh.setOnClickListener(v -> copy("SSH command", sshCommand(vm)));
-        startNginx.setOnClickListener(v -> startNginx(vm));
+        startPreview.setOnClickListener(v -> startPreviewServer(vm));
         openWeb.setOnClickListener(v -> {
             if (vm.httpsUrl == null || vm.httpsUrl.isEmpty()) Toast.makeText(this, "This VM has no HTTPS URL in the API response.", Toast.LENGTH_LONG).show();
             else startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(vm.httpsUrl)));
@@ -183,15 +183,21 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void startNginx(ApiClient.Vm vm) {
+    private void startPreviewServer(ApiClient.Vm vm) {
         String target = sshTarget(vm);
         if (target.isEmpty()) {
-            setStatus("Cannot start nginx: this VM has no name or SSH destination in the API response.");
+            setStatus("Cannot start preview server: this VM has no name or SSH destination in the API response.");
             return;
         }
-        String cmd = "ssh " + ApiClient.shellQuote(target) + " sudo systemctl enable --now nginx";
-        runTask("Starting nginx on " + target + "...", () -> new ApiClient(this).exec(cmd), result -> {
-            setStatus("nginx start command finished. Now tap Open HTTPS preview. Response: " + shorten(result, 220));
+        String script = "mkdir -p /opt/exe-preview"
+                + " && printf '%s\\n' '<!doctype html><html><head><title>exe.dev preview</title></head><body><h1>exe.dev preview is running</h1><p>Started from the Android app on port 8000.</p></body></html>' > /opt/exe-preview/index.html"
+                + " && printf '%s\\n' '[Unit]' 'Description=exe.dev Android preview server' 'After=network.target' '' '[Service]' 'WorkingDirectory=/opt/exe-preview' 'ExecStart=/usr/bin/python3 -m http.server 8000 --bind 0.0.0.0' 'Restart=always' '' '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/exe-preview.service"
+                + " && systemctl daemon-reload"
+                + " && systemctl enable --now exe-preview.service"
+                + " && systemctl is-active exe-preview.service";
+        String cmd = "ssh " + ApiClient.shellQuote(target) + " sh -lc " + ApiClient.shellQuote(script);
+        runTask("Starting preview server on " + target + ":8000...", () -> new ApiClient(this).exec(cmd), result -> {
+            setStatus("Preview server started on port 8000. Now tap Open HTTPS preview. Response: " + shorten(result, 220));
             refreshVms();
         });
     }
