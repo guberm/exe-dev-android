@@ -110,10 +110,15 @@ public final class ApiClient {
         addRepeated(cmd, "--env", r.envLines);
         addRepeated(cmd, "--integration", r.integrationsCsv);
         addFlag(cmd, "--comment", r.comment);
-        addFlag(cmd, "--setup-script", r.setupScript);
-        addFlag(cmd, "--prompt", r.prompt);
+        addFlag(cmd, "--setup-script", encodeCommandText(r.setupScript));
+        addFlag(cmd, "--prompt", encodeCommandText(r.prompt));
         if (r.noEmail) cmd.append(" --no-email");
         return cmd.toString();
+    }
+
+    private static String encodeCommandText(String value) {
+        if (value == null) return "";
+        return value.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n");
     }
 
     private static void addRepeated(StringBuilder cmd, String flag, String value) {
