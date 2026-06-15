@@ -11,9 +11,8 @@ A small native Android client for [exe.dev](https://exe.dev/) with an English UI
 - Copy SSH connection commands for existing VMs.
 - Open VM HTTPS URLs when the API returns one.
 - Explain exe.dev's default port 8000 preview behavior.
-- Copy a terminal command that starts a tiny Python/systemd preview server on port 8000.
-- Use the built-in SSH terminal to generate/register a mobile SSH key and run commands on a VM from Android.
-- Log in without a computer via **Login via SSH on this phone**, which opens an interactive `ssh exe.dev` flow, lets the user complete email/code prompts, then generates and saves the API token. The phone terminal includes a **Copy saved bearer token** button after connect/token-save and filters exe.dev's animated banner so it does not create an endless scroll of repeated logo frames.
+- Open a VM into a phone-native SSH terminal with command input, Send, Ctrl-C, output copy, reconnect, and a one-tap port 8000 preview setup command.
+- Log in without a computer via **Login via SSH on this phone**. The app auto-connects, lets the user complete email/code prompts only if exe.dev asks, then automatically generates, saves, and copies the `exe1.` / `exe0.` bearer token when the exe.dev prompt is ready. It also registers the phone SSH key automatically, so manual copy/paste is only a fallback.
 - Error and setup dialogs include a **Copy** button for sending diagnostics or commands elsewhere.
 - Show a **Logout** button only when logged in; logout removes the saved API token and the app-generated mobile SSH key.
 - Includes a custom vector/adaptive launcher icon.
@@ -26,9 +25,9 @@ The Android app supports phone-only login:
 
 1. Open **Login / Settings**.
 2. Tap **Login via SSH on this phone**.
-3. The app generates a mobile SSH key and opens an interactive `ssh exe.dev` session.
-4. Complete exe.dev's email / verification-code prompts in the phone terminal.
-5. Tap **Generate and save API token**. The app saves the returned `exe1.` / `exe0.` token automatically.
+3. The app generates a mobile SSH key and auto-connects to `ssh exe.dev`.
+4. If exe.dev asks for email / verification-code prompts, complete them in the phone terminal.
+5. Once the `exe.dev ▶` prompt appears, the app automatically sends a unique `ssh-key generate-api-key ...` command, saves the returned `exe1.` / `exe0.` token, copies it to the Android clipboard, and registers the phone SSH public key. No manual token paste is required.
 
 Fallback for an already trusted computer:
 
@@ -48,7 +47,7 @@ For least privilege, create short-lived tokens and restrict commands if you do n
 - `new` for VM creation
 - `ssh-key add` and `ssh-key list` for built-in mobile SSH terminal setup
 
-The app does not run `ssh <vm> ...` through the HTTPS API. exe.dev returns HTTP 422 for that because VM shell commands require a real SSH session. The port 8000 setup button copies a PowerShell-safe `ssh ... "echo <base64> | base64 -d | sudo sh"` terminal command instead; run it in a terminal where `ssh exe.dev` works, then tap **Open HTTPS preview**.
+The app does not run `ssh <vm> ...` through the HTTPS API. exe.dev returns HTTP 422 for that because VM shell commands require a real SSH session. Use **Open terminal** on a VM to get a direct phone SSH shell; the app starts the port 8000 preview server automatically after connect.
 
 ## Build
 

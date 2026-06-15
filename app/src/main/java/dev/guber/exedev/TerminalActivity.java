@@ -12,6 +12,7 @@ import android.os.Looper;
 import android.text.InputType;
 import android.util.Base64;
 import android.view.Gravity;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -20,11 +21,13 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.jcraft.jsch.ChannelExec;
+import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,19 +36,33 @@ public class TerminalActivity extends Activity {
     private static final String KEY_PRIVATE = "mobile_ssh_private_key";
     private static final String KEY_PUBLIC = "mobile_ssh_public_key";
     private static final String KEY_USER = "ssh_user";
-    private static final int SSH_TIMEOUT_MS = 120000;
+    private static final int MAX_TRANSCRIPT_CHARS = 28000;
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newCachedThreadPool();
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final StringBuilder transcript = new StringBuilder();
 
-    private EditText host;
-    private EditText user;
-    private EditText command;
+    private TextView title;
+    private TextView status;
     private TextView output;
+    private EditText input;
+    private Button connectButton;
+    private Button sendButton;
+    private String host;
+    private String user;
+    private volatile Session session;
+    private volatile ChannelShell channel;
+    private volatile OutputStream shellInput;
+    private volatile boolean connecting;
+    private volatile boolean previewStarted;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        host = valueOrEmpty(getIntent().getStringExtra("host"));
+        user = AppSettings.prefs(this).getString(KEY_USER, "michael.guber");
+        if (user == null || user.trim().isEmpty()) user = "michael.guber";
         buildUi();
+        main.postDelayed(this::connectTerminal, 250);
     }
 
     private void buildUi() {
@@ -61,176 +78,187 @@ public class TerminalActivity extends Activity {
 
         LinearLayout hero = Ui.card(this);
         hero.setBackground(Ui.rounded(p.primary, p.primary, 22, this));
-        hero.addView(Ui.text(this, "SSH TERMINAL", 12, 0xFFEDE9FE, Typeface.BOLD));
-        hero.addView(Ui.text(this, "exe.dev Terminal", 30, 0xFFFFFFFF, Typeface.BOLD));
-        hero.addView(Ui.text(this, "Generate a mobile SSH key, register it with exe.dev, then run commands on a VM directly from Android.", 15, 0xFFEDE9FE, Typeface.NORMAL));
+        hero.addView(Ui.text(this, "VM TERMINAL", 12, 0xFFEDE9FE, Typeface.BOLD));
+        title = Ui.text(this, host.isEmpty() ? "exe.dev VM" : host, 28, 0xFFFFFFFF, Typeface.BOLD);
+        hero.addView(title);
+        hero.addView(Ui.text(this, "Type commands below and press Send. The app opens SSH directly from the phone and starts the port 8000 preview service automatically.", 15, 0xFFEDE9FE, Typeface.NORMAL));
         root.addView(hero);
 
-        LinearLayout setup = Ui.card(this);
-        setup.addView(Ui.text(this, "Mobile SSH setup", 19, p.text, Typeface.BOLD));
-        setup.addView(Ui.text(this, "This creates an SSH key inside the app and adds its public key to exe.dev using your saved HTTPS API token. Your token must allow the ssh-key add command.", 14, p.muted, Typeface.NORMAL));
-        Button setupKey = Ui.button(this, "Generate/register mobile SSH key", true);
-        Button copyPub = Ui.button(this, "Copy mobile public key", false);
-        setup.addView(setupKey);
-        setup.addView(copyPub);
-        root.addView(setup);
-        setupKey.setOnClickListener(v -> registerMobileKey());
-        copyPub.setOnClickListener(v -> {
-            String pub = publicKey();
-            if (pub.isEmpty()) showPopup("No mobile key", "Generate the mobile SSH key first.");
-            else copy("Mobile public key", pub);
-        });
-
         LinearLayout terminal = Ui.card(this);
-        terminal.addView(Ui.text(this, "Run SSH command", 19, p.text, Typeface.BOLD));
-        terminal.addView(Ui.text(this, "Host should look like electron-futon.exe.xyz. Username defaults to michael.guber because that is the working Windows SSH username for this VM; change it if exe.dev expects a different username.", 14, p.muted, Typeface.NORMAL));
-        String defaultHost = getIntent().getStringExtra("host");
-        host = Ui.input(this, "SSH host, e.g. electron-futon.exe.xyz", defaultHost == null ? "" : defaultHost, false);
-        user = Ui.input(this, "SSH username", AppSettings.prefs(this).getString(KEY_USER, "michael.guber"), false);
-        command = Ui.input(this, "Command", "uname -a && whoami && pwd", true);
-        command.setMinLines(4);
-        command.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        Button run = Ui.button(this, "Run command", true);
-        Button preview = Ui.button(this, "Start port 8000 preview server", false);
-        Button clear = Ui.button(this, "Clear output", false);
-        Button copyOut = Ui.button(this, "Copy output", false);
-        terminal.addView(host);
-        terminal.addView(user);
-        terminal.addView(command);
-        terminal.addView(run);
-        terminal.addView(preview);
-        terminal.addView(clear);
-        terminal.addView(copyOut);
-        output = Ui.text(this, "Ready. First run mobile SSH setup if this app has not been added to exe.dev yet.", 13, p.text, Typeface.MONOSPACE.getStyle());
+        status = Ui.text(this, "Opening SSH terminal...", 14, p.muted, Typeface.NORMAL);
+        output = Ui.text(this, "", 13, p.text, Typeface.NORMAL);
         output.setTypeface(Typeface.MONOSPACE);
         output.setTextIsSelectable(true);
         output.setGravity(Gravity.START);
+        output.setMinLines(18);
         output.setPadding(Ui.dp(this, 10), Ui.dp(this, 10), Ui.dp(this, 10), Ui.dp(this, 10));
         output.setBackground(Ui.rounded(p.background, p.border, 12, this));
+
+        input = Ui.input(this, "Type command, e.g. ls -la", "", false);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEND);
+        input.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEND) {
+                sendTypedCommand();
+                return true;
+            }
+            return false;
+        });
+
+        sendButton = Ui.button(this, "Send", true);
+        Button ctrlC = Ui.button(this, "Ctrl-C", false);
+        connectButton = Ui.button(this, "Reconnect", false);
+        Button clear = Ui.button(this, "Clear", false);
+        Button copyOut = Ui.button(this, "Copy output", false);
+
+        terminal.addView(status);
         terminal.addView(output);
+        terminal.addView(input);
+        terminal.addView(sendButton);
+        terminal.addView(ctrlC);
+        terminal.addView(connectButton);
+        terminal.addView(clear);
+        terminal.addView(copyOut);
         root.addView(terminal);
 
-        run.setOnClickListener(v -> runTypedCommand());
-        preview.setOnClickListener(v -> runPreviewCommand());
-        clear.setOnClickListener(v -> output.setText(""));
-        copyOut.setOnClickListener(v -> copy("Terminal output", output.getText().toString()));
+        sendButton.setOnClickListener(v -> sendTypedCommand());
+        ctrlC.setOnClickListener(v -> sendControlC());
+        connectButton.setOnClickListener(v -> connectTerminal());
+        clear.setOnClickListener(v -> { transcript.setLength(0); renderTranscript(); });
+        copyOut.setOnClickListener(v -> copy("Terminal output", transcript.toString()));
 
         setContentView(scroll);
+        setConnectedUi(false);
+        append("Opening " + (host.isEmpty() ? "VM" : host) + "...\n");
     }
 
-    private void registerMobileKey() {
-        append("\n== mobile SSH setup ==\n");
+    private void connectTerminal() {
+        if (connecting || isConnected()) return;
+        if (host.isEmpty()) {
+            showPopup("Missing SSH host", "This VM has no SSH destination in the API response.");
+            return;
+        }
+        connecting = true;
+        setStatus("Connecting to " + user + "@" + host + "...");
+        setConnectedUi(false);
+        append("\n== connecting to " + user + "@" + host + " ==\n");
         executor.submit(() -> {
             try {
                 ensureKeyPair();
-                String pub = publicKey();
-                String cmd = "ssh-key add " + ApiClient.shellQuote(pub);
-                String response = new ApiClient(this).exec(cmd);
-                main.post(() -> {
-                    append("Registered mobile SSH public key with exe.dev.\n" + response + "\n");
-                    showPopup("Mobile SSH ready", "The app generated an SSH key and added its public key to exe.dev. You can now run VM commands from this terminal.\n\nPublic key:\n" + pub);
-                });
+                try {
+                    openShell();
+                } catch (Exception first) {
+                    if (AppSettings.hasValidToken(this)) {
+                        main.post(() -> append("SSH was not ready; registering the phone key with exe.dev and retrying...\n"));
+                        registerMobileKeyViaApi();
+                        openShell();
+                    } else {
+                        throw first;
+                    }
+                }
             } catch (Exception e) {
                 main.post(() -> {
-                    String msg = formatSetupError(e);
-                    append("Mobile SSH setup failed: " + msg + "\n");
-                    showPopup("Mobile SSH setup failed", msg);
+                    String msg = message(e);
+                    append("Connection failed: " + msg + "\n");
+                    setStatus("Not connected. Open Login / Settings if this phone key is not trusted yet.");
+                    setConnectedUi(false);
+                    if (needsLogin(msg)) {
+                        showPopup("Login needed", "This phone key is not trusted by exe.dev yet. Go back to Login / Settings, tap Login via SSH on this phone, and the app will save the token/key automatically.\n\nDetails:\n" + msg);
+                    } else {
+                        showPopup("SSH connect failed", msg);
+                    }
                 });
+                disconnect(false);
+            } finally {
+                connecting = false;
+                main.post(() -> setConnectedUi(isConnected()));
             }
         });
     }
 
-    private void runTypedCommand() {
-        String cmd = text(command);
-        if (cmd.isEmpty()) {
-            showPopup("Missing command", "Type a command first.");
-            return;
-        }
-        runSshCommand(cmd);
+    private void openShell() throws Exception {
+        JSch jsch = new JSch();
+        jsch.addIdentity("exe-dev-android", privateKey().getBytes(StandardCharsets.UTF_8), null, null);
+        Session s = jsch.getSession(user, host, 22);
+        s.setConfig("StrictHostKeyChecking", "no");
+        s.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
+        s.connect(20000);
+        ChannelShell ch = (ChannelShell) s.openChannel("shell");
+        ch.setPtyType("dumb");
+        ch.setPtySize(120, 36, 960, 720);
+        InputStream shellOutput = ch.getInputStream();
+        OutputStream shellIn = ch.getOutputStream();
+        ch.connect(10000);
+        session = s;
+        channel = ch;
+        shellInput = shellIn;
+        main.post(() -> {
+            setStatus("Connected. Type a command and press Send.");
+            setConnectedUi(true);
+            append("Connected.\n");
+        });
+        readLoop(shellOutput);
     }
 
-    private void runPreviewCommand() {
-        String encoded = Base64.encodeToString(previewServerScript().getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-        String cmd = "echo " + encoded + " | base64 -d | sudo sh";
-        command.setText(cmd);
-        runSshCommand(cmd);
+    private void readLoop(InputStream shellOutput) {
+        byte[] buf = new byte[4096];
+        try {
+            while (channel != null && !channel.isClosed()) {
+                int n = shellOutput.read(buf);
+                if (n < 0) break;
+                String chunk = sanitizeTerminalOutput(new String(buf, 0, n, StandardCharsets.UTF_8));
+                main.post(() -> append(chunk));
+            }
+        } catch (Exception e) {
+            main.post(() -> append("\nRead loop ended: " + message(e) + "\n"));
+        } finally {
+            main.post(() -> append("\nDisconnected.\n"));
+            disconnect(false);
+        }
     }
 
-    private void runSshCommand(String cmd) {
-        String h = text(host);
-        String u = text(user);
-        if (h.isEmpty()) {
-            showPopup("Missing host", "Paste a VM SSH host first, for example electron-futon.exe.xyz.");
+    private void sendTypedCommand() {
+        String value = input.getText() == null ? "" : input.getText().toString();
+        if (value.trim().isEmpty()) return;
+        input.setText("");
+        sendLine(value);
+    }
+
+    private void sendLine(String value) {
+        OutputStream out = shellInput;
+        if (out == null || !isConnected()) {
+            append("Not connected yet. Reconnecting...\n");
+            connectTerminal();
             return;
         }
-        if (u.isEmpty()) {
-            showPopup("Missing username", "Type the SSH username first.");
-            return;
-        }
-        String priv = privateKey();
-        if (priv.isEmpty()) {
-            showPopup("Mobile SSH key required", "Tap Generate/register mobile SSH key first, or paste/import a key in a future version.");
-            return;
-        }
-        AppSettings.prefs(this).edit().putString(KEY_USER, u).apply();
-        append("\n$ " + cmd + "\n");
         executor.submit(() -> {
             try {
-                String result = execSsh(h, u, priv, cmd);
-                main.post(() -> append(result + "\n"));
+                out.write((value + "\n").getBytes(StandardCharsets.UTF_8));
+                out.flush();
             } catch (Exception e) {
-                main.post(() -> {
-                    String msg = e.getMessage() == null ? e.toString() : e.getMessage();
-                    append("ERROR: " + msg + "\n");
-                    showPopup("SSH command failed", msg);
-                });
+                main.post(() -> showPopup("Send failed", message(e)));
             }
         });
     }
 
-    private String execSsh(String h, String u, String privateKey, String cmd) throws Exception {
-        JSch jsch = new JSch();
-        jsch.addIdentity("exe-dev-android", privateKey.getBytes(StandardCharsets.UTF_8), null, null);
-        Session session = jsch.getSession(u, h, 22);
-        session.setConfig("StrictHostKeyChecking", "no");
-        session.connect(15000);
-        ChannelExec channel = null;
-        StringBuilder out = new StringBuilder();
-        ByteArrayOutputStream err = new ByteArrayOutputStream();
-        try {
-            channel = (ChannelExec) session.openChannel("exec");
-            channel.setPty(true);
-            channel.setCommand(cmd);
-            channel.setErrStream(err);
-            InputStream in = channel.getInputStream();
-            channel.connect(10000);
-            byte[] buf = new byte[4096];
-            long deadline = System.currentTimeMillis() + SSH_TIMEOUT_MS;
-            while (!channel.isClosed()) {
-                while (in.available() > 0) {
-                    int n = in.read(buf, 0, buf.length);
-                    if (n < 0) break;
-                    out.append(new String(buf, 0, n, StandardCharsets.UTF_8));
-                }
-                if (System.currentTimeMillis() > deadline) {
-                    channel.disconnect();
-                    throw new RuntimeException("SSH command timed out after " + (SSH_TIMEOUT_MS / 1000) + " seconds. Output so far:\n" + out);
-                }
-                Thread.sleep(100);
+    private void sendControlC() {
+        OutputStream out = shellInput;
+        if (out == null || !isConnected()) return;
+        executor.submit(() -> {
+            try {
+                out.write(3);
+                out.flush();
+            } catch (Exception e) {
+                main.post(() -> showPopup("Ctrl-C failed", message(e)));
             }
-            while (in.available() > 0) {
-                int n = in.read(buf, 0, buf.length);
-                if (n < 0) break;
-                out.append(new String(buf, 0, n, StandardCharsets.UTF_8));
-            }
-            String stderr = err.toString("UTF-8");
-            if (!stderr.trim().isEmpty()) out.append(stderr);
-            out.append("\n[exit ").append(channel.getExitStatus()).append("]");
-            return out.toString();
-        } finally {
-            if (channel != null) channel.disconnect();
-            session.disconnect();
-        }
+        });
+    }
+
+    private void registerMobileKeyViaApi() throws Exception {
+        ensureKeyPair();
+        String response = new ApiClient(this).exec("ssh-key add " + ApiClient.shellQuote(publicKey()));
+        main.post(() -> append("Mobile SSH key registered.\n" + abbreviate(response, 500) + "\n"));
     }
 
     private void ensureKeyPair() throws Exception {
@@ -258,12 +286,108 @@ public class TerminalActivity extends Activity {
         return value == null ? "" : value.trim();
     }
 
-    private String formatSetupError(Exception e) {
-        String msg = e.getMessage() == null ? e.toString() : e.getMessage();
-        if (msg.contains("HTTP 403")) {
-            return msg + "\n\nYour API token probably does not allow ssh-key add. Generate a token with:\n\nssh exe.dev ssh-key generate-api-key \"--cmds=whoami,ls,new,ssh-key add,ssh-key list\" --exp=30d\n\nThen paste it in Login / Settings and retry mobile SSH setup.";
+    private boolean isConnected() {
+        return channel != null && channel.isConnected() && !channel.isClosed() && shellInput != null;
+    }
+
+    private void setConnectedUi(boolean connected) {
+        if (sendButton != null) sendButton.setEnabled(connected);
+        if (connectButton != null) connectButton.setEnabled(!connected && !connecting);
+    }
+
+    private void setStatus(String value) {
+        if (status != null) status.setText(value);
+    }
+
+    private void append(String text) {
+        if (text == null || text.isEmpty()) return;
+        transcript.append(text);
+        if (transcript.length() > MAX_TRANSCRIPT_CHARS) {
+            transcript.delete(0, transcript.length() - MAX_TRANSCRIPT_CHARS);
+            if (transcript.length() > 0) transcript.insert(0, "... output truncated ...\n");
         }
-        return msg;
+        renderTranscript();
+        maybeStartPreviewService();
+    }
+
+    private void maybeStartPreviewService() {
+        if (previewStarted || !isConnected()) return;
+        String text = transcript.toString();
+        boolean hasPrompt = text.matches("(?s).*\\n[^\\n]*@[^\\n:]+:[^\\n]*\\$\\s*$.*")
+                || text.contains("exedev@")
+                || text.contains("$ ");
+        if (!hasPrompt) return;
+        previewStarted = true;
+        setStatus("Connected. Starting port 8000 preview service automatically...");
+        append("\n== auto-starting port 8000 preview service ==\n");
+        executor.submit(() -> {
+            try {
+                String result = execSshCommand(previewCommand());
+                main.post(() -> {
+                    append("Preview service setup finished.\n" + abbreviate(result, 700) + "\n");
+                    setStatus("Connected. Preview service is ready on port 8000.");
+                });
+            } catch (Exception e) {
+                main.post(() -> {
+                    append("Preview service auto-setup failed: " + message(e) + "\n");
+                    setStatus("Connected. Preview auto-setup failed; terminal still works.");
+                });
+            }
+        });
+    }
+
+    private void renderTranscript() {
+        if (output != null) output.setText(trimConsecutiveBlankLines(transcript.toString()));
+    }
+
+    private String execSshCommand(String cmd) throws Exception {
+        JSch jsch = new JSch();
+        jsch.addIdentity("exe-dev-android-preview", privateKey().getBytes(StandardCharsets.UTF_8), null, null);
+        Session s = jsch.getSession(user, host, 22);
+        s.setConfig("StrictHostKeyChecking", "no");
+        s.connect(20000);
+        ChannelExec exec = null;
+        StringBuilder out = new StringBuilder();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        try {
+            exec = (ChannelExec) s.openChannel("exec");
+            exec.setPty(true);
+            exec.setCommand(cmd);
+            exec.setErrStream(err);
+            InputStream in = exec.getInputStream();
+            exec.connect(10000);
+            byte[] buf = new byte[4096];
+            long deadline = System.currentTimeMillis() + 120000;
+            while (!exec.isClosed()) {
+                while (in.available() > 0) {
+                    int n = in.read(buf, 0, buf.length);
+                    if (n < 0) break;
+                    out.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+                if (System.currentTimeMillis() > deadline) {
+                    exec.disconnect();
+                    throw new RuntimeException("SSH setup timed out after 120 seconds. Output so far:\n" + out);
+                }
+                Thread.sleep(100);
+            }
+            while (in.available() > 0) {
+                int n = in.read(buf, 0, buf.length);
+                if (n < 0) break;
+                out.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+            }
+            String stderr = err.toString("UTF-8");
+            if (!stderr.trim().isEmpty()) out.append(stderr);
+            out.append("\n[exit ").append(exec.getExitStatus()).append("]");
+            return sanitizeTerminalOutput(out.toString());
+        } finally {
+            if (exec != null) exec.disconnect();
+            s.disconnect();
+        }
+    }
+
+    private String previewCommand() {
+        String encoded = Base64.encodeToString(previewServerScript().getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+        return "echo " + encoded + " | base64 -d | sudo sh";
     }
 
     private String previewServerScript() {
@@ -288,8 +412,16 @@ public class TerminalActivity extends Activity {
                 + "systemctl is-active exe-preview.service\n";
     }
 
-    private void append(String text) {
-        output.append(text);
+    private void disconnect(boolean userRequested) {
+        try { if (channel != null) channel.disconnect(); } catch (Exception ignored) {}
+        try { if (session != null) session.disconnect(); } catch (Exception ignored) {}
+        channel = null;
+        session = null;
+        shellInput = null;
+        main.post(() -> {
+            setConnectedUi(false);
+            if (userRequested) setStatus("Disconnected.");
+        });
     }
 
     private void copy(String label, String value) {
@@ -307,11 +439,41 @@ public class TerminalActivity extends Activity {
                 .show();
     }
 
-    private static String text(EditText et) {
-        return et.getText() == null ? "" : et.getText().toString().trim();
+    private static String trimConsecutiveBlankLines(String value) {
+        if (value == null) return "";
+        return value.replaceAll("\n{4,}", "\n\n\n");
+    }
+
+    private static String sanitizeTerminalOutput(String value) {
+        if (value == null) return "";
+        return value
+                .replaceAll("\\u001B\\[[0-9;?]*[ -/]*[@-~]", "")
+                .replaceAll("\\u001B\\][^\\u0007]*(\\u0007|\\u001B\\\\)", "")
+                .replace('\r', '\n');
+    }
+
+    private static boolean needsLogin(String msg) {
+        if (msg == null) return false;
+        String lower = msg.toLowerCase();
+        return lower.contains("auth fail") || lower.contains("publickey") || lower.contains("permission denied") || lower.contains("invalid token");
+    }
+
+    private static String valueOrEmpty(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private static String message(Exception e) {
+        return e.getMessage() == null ? e.toString() : e.getMessage();
+    }
+
+    private static String abbreviate(String text, int max) {
+        if (text == null) return "";
+        text = text.trim();
+        return text.length() <= max ? text : text.substring(0, max) + "...";
     }
 
     @Override protected void onDestroy() {
+        disconnect(false);
         executor.shutdownNow();
         super.onDestroy();
     }

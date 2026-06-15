@@ -44,15 +44,15 @@ public class SettingsActivity extends Activity {
         scroll.addView(root);
 
         root.addView(Ui.text(this, "Login to exe.dev", 28, p.text, Typeface.BOLD));
-        root.addView(Ui.text(this, "exe.dev does not provide a normal mobile username/password login. This app logs in with an official HTTPS API bearer token.", 14, p.muted, Typeface.NORMAL));
+        root.addView(Ui.text(this, "exe.dev uses SSH-first login. Tap Login via SSH on this phone; the app will connect, generate the bearer token when the exe.dev prompt is ready, save it, and register this phone key automatically.", 14, p.muted, Typeface.NORMAL));
         Ui.addSpacer(root, 14);
 
         LinearLayout wizard = Ui.card(this);
         wizard.addView(Ui.text(this, "3-step login wizard", 19, p.text, Typeface.BOLD));
-        wizard.addView(Ui.text(this, "Step 1 - Best option: tap Login via SSH on this phone and complete exe.dev signup here. Fallback if you already have a trusted computer:", 14, p.muted, Typeface.NORMAL));
+        wizard.addView(Ui.text(this, "Best option: tap Login via SSH on this phone. If exe.dev asks for email/code, type it there. Once the exe.dev prompt appears, token generation/save is automatic. Fallback if you already have a trusted computer:", 14, p.muted, Typeface.NORMAL));
         wizard.addView(codeBlock(TOKEN_COMMAND));
-        wizard.addView(Ui.text(this, "Step 2 - Copy the token printed by exe.dev. It usually starts with exe1. or exe0. Do not send it in chat - it works like a password.", 14, p.muted, Typeface.NORMAL));
-        wizard.addView(Ui.text(this, "Step 3 - Paste the token below, keep the default endpoint, then tap Save and test login.", 14, p.muted, Typeface.NORMAL));
+        wizard.addView(Ui.text(this, "Manual fallback only: copy the token printed by exe.dev if the automatic flow cannot finish. Tokens usually start with exe1. or exe0. Do not send it in chat - it works like a password.", 14, p.muted, Typeface.NORMAL));
+        wizard.addView(Ui.text(this, "Normally you should not paste anything here; the phone SSH flow saves the token directly.", 14, p.muted, Typeface.NORMAL));
         Button phoneLogin = Ui.button(this, "Login via SSH on this phone", true);
         Button copyCommand = Ui.button(this, "Copy terminal command", false);
         Button openDocs = Ui.button(this, "Open exe.dev API docs", false);
@@ -128,8 +128,8 @@ public class SettingsActivity extends Activity {
             showPopup("Token required", message);
             return;
         }
-        if (!tokenValue.startsWith("exe")) {
-            String message = "This does not look like an exe.dev token. Tokens normally start with exe1. or exe0.";
+        if (!tokenValue.startsWith("exe0.") && !tokenValue.startsWith("exe1.")) {
+            String message = "This does not look like an exe.dev bearer token. Tokens normally start with exe1. or exe0.";
             status.setText(message);
             showPopup("Invalid token", message);
             return;

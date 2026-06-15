@@ -38,7 +38,12 @@ public final class AppSettings {
     }
 
     public static boolean hasToken(Context context) {
-        return !token(context).isEmpty();
+        return hasValidToken(context);
+    }
+
+    public static boolean hasValidToken(Context context) {
+        String value = token(context);
+        return value.startsWith("exe0.") || value.startsWith("exe1.");
     }
 
     public static void logout(Context context) {

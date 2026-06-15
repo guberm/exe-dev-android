@@ -53,6 +53,8 @@ public class PhoneLoginActivity extends Activity {
     private volatile Session session;
     private volatile ChannelShell channel;
     private volatile OutputStream shellInput;
+    private volatile boolean tokenCommandSent;
+    private volatile boolean keyRegistrationStarted;
     private final StringBuilder transcript = new StringBuilder();
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -75,7 +77,7 @@ public class PhoneLoginActivity extends Activity {
         hero.setBackground(Ui.rounded(p.primary, p.primary, 22, this));
         hero.addView(Ui.text(this, "PHONE-ONLY LOGIN", 12, 0xFFEDE9FE, Typeface.BOLD));
         hero.addView(Ui.text(this, "ssh exe.dev on Android", 29, 0xFFFFFFFF, Typeface.BOLD));
-        hero.addView(Ui.text(this, "This opens the real exe.dev SSH signup/login flow from the phone. Enter your email and verification code here; no computer needed.", 15, 0xFFEDE9FE, Typeface.NORMAL));
+        hero.addView(Ui.text(this, "This opens the real exe.dev SSH login from the phone. If you already reach the exe.dev prompt, the app generates and saves the API token automatically - no manual copy/paste.", 15, 0xFFEDE9FE, Typeface.NORMAL));
         root.addView(hero);
 
         LinearLayout flow = Ui.card(this);
@@ -83,8 +85,8 @@ public class PhoneLoginActivity extends Activity {
         flow.addView(Ui.text(this,
                 "1. The app generates a mobile SSH key inside private app storage.\n"
                         + "2. It connects to exe.dev over SSH using that key.\n"
-                        + "3. Follow exe.dev prompts in the terminal below.\n"
-                        + "4. When registration/login finishes, tap Generate and save API token.",
+                        + "3. If exe.dev asks for email/code, type it below and tap Send.\n"
+                        + "4. Once the exe.dev prompt appears, the app generates, saves, and applies the API token automatically.",
                 14, p.muted, Typeface.NORMAL));
         root.addView(flow);
 
@@ -93,7 +95,7 @@ public class PhoneLoginActivity extends Activity {
         sshUser = Ui.input(this, "SSH username for exe.dev", "mg", false);
         controls.addView(sshUser);
         connectButton = Ui.button(this, "Connect to ssh exe.dev", true);
-        tokenButton = Ui.button(this, "Generate and save API token", false);
+        tokenButton = Ui.button(this, "Generate/save token now", false);
         copyBearerTokenButton = Ui.button(this, "Copy saved bearer token", false);
         Button copyPublic = Ui.button(this, "Copy mobile public key", false);
         Button disconnect = Ui.button(this, "Disconnect", false);
@@ -125,7 +127,7 @@ public class PhoneLoginActivity extends Activity {
 
         connectButton.setOnClickListener(v -> connect());
         sendButton.setOnClickListener(v -> sendTypedInput());
-        tokenButton.setOnClickListener(v -> sendLine(buildTokenCommand()));
+        tokenButton.setOnClickListener(v -> sendTokenCommand());
         copyBearerTokenButton.setOnClickListener(v -> copySavedBearerToken());
         copyPublic.setOnClickListener(v -> {
             try {
@@ -140,6 +142,7 @@ public class PhoneLoginActivity extends Activity {
 
         setContentView(scroll);
         refreshBearerTokenButton(false);
+        main.postDelayed(this::connect, 250);
     }
 
     private void refreshBearerTokenButton(boolean connected) {
@@ -150,8 +153,7 @@ public class PhoneLoginActivity extends Activity {
     }
 
     private boolean hasSavedBearerToken() {
-        String token = AppSettings.token(this);
-        return token.startsWith("exe0.") || token.startsWith("exe1.");
+        return AppSettings.hasValidToken(this);
     }
 
     private void copySavedBearerToken() {
@@ -164,6 +166,7 @@ public class PhoneLoginActivity extends Activity {
     }
 
     private void connect() {
+        if (shellInput != null && channel != null && channel.isConnected() && !channel.isClosed()) return;
         String user = text(sshUser);
         if (user.isEmpty()) {
             showPopup("Username required", "Type an SSH username first. For exe.dev signup the username is usually not important; mg is the default.");
@@ -236,6 +239,35 @@ public class PhoneLoginActivity extends Activity {
         return "ssh-key generate-api-key --label=" + label + " " + TOKEN_COMMAND_FLAGS;
     }
 
+    private void sendTokenCommand() {
+        tokenCommandSent = true;
+        append("\n== generating and saving API token ==\n");
+        sendLine(buildTokenCommand());
+    }
+
+    private void maybeAutoGenerateToken() {
+        if (tokenCommandSent || AppSettings.hasValidToken(this) || shellInput == null) return;
+        String text = transcript.toString();
+        if (text.contains("Please enter your email address") || text.toLowerCase().contains("verification")) return;
+        if (text.contains("exe.dev ▶") || text.contains("exe.dev >") || text.matches("(?s).*\\n[^\\n]*exe\\.dev[^\\n]*[>▶$]\\s*$.*")) {
+            sendTokenCommand();
+        }
+    }
+
+    private void registerMobileKeyAfterToken() {
+        if (keyRegistrationStarted) return;
+        keyRegistrationStarted = true;
+        executor.submit(() -> {
+            try {
+                ensureKeyPair();
+                String response = new ApiClient(this).exec("ssh-key add " + ApiClient.shellQuote(publicKey()));
+                main.post(() -> append("\nMobile SSH key registered automatically.\n" + abbreviate(response, 500) + "\n"));
+            } catch (Exception e) {
+                main.post(() -> append("\nMobile SSH key auto-register skipped: " + message(e) + "\n"));
+            }
+        });
+    }
+
     private void sendLine(String value) {
         OutputStream out = shellInput;
         if (out == null) {
@@ -286,6 +318,7 @@ public class PhoneLoginActivity extends Activity {
         }
         output.setText(trimConsecutiveBlankLines(transcript.toString()));
         maybeSaveToken();
+        maybeAutoGenerateToken();
     }
 
     private void maybeSaveToken() {
@@ -294,8 +327,11 @@ public class PhoneLoginActivity extends Activity {
         while (m.find()) token = m.group();
         if (token == null || token.equals(AppSettings.token(this))) return;
         AppSettings.save(this, AppSettings.DEFAULT_ENDPOINT, token);
+        copy("Bearer token", token);
         refreshBearerTokenButton(true);
-        showPopup("API token saved", "The app found an exe.dev API token in the SSH output and saved it. Tap Copy saved bearer token if you need to paste it elsewhere, or go back and manage VMs from the phone.");
+        append("\nAPI token saved automatically. No manual paste needed.\n");
+        registerMobileKeyAfterToken();
+        Toast.makeText(this, "API token saved", Toast.LENGTH_LONG).show();
     }
 
     private void disconnect() {
@@ -366,6 +402,12 @@ public class PhoneLoginActivity extends Activity {
 
     private static String message(Exception e) {
         return e.getMessage() == null ? e.toString() : e.getMessage();
+    }
+
+    private static String abbreviate(String text, int max) {
+        if (text == null) return "";
+        text = text.trim();
+        return text.length() <= max ? text : text.substring(0, max) + "...";
     }
 
     @Override protected void onDestroy() {
