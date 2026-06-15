@@ -10,7 +10,11 @@ android {
         applicationId = "dev.guber.exedev"
         minSdk = 23
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.0.7"
+        versionCode = 11
+        versionName = "1.2.0"
     }
+}
+
+dependencies {
+    implementation("com.github.mwiede:jsch:0.2.21")
 }

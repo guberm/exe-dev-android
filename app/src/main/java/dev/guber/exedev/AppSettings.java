@@ -9,6 +9,8 @@ public final class AppSettings {
     private static final String PREFS = "exe_dev_settings";
     private static final String KEY_ENDPOINT = "endpoint";
     private static final String KEY_TOKEN = "token";
+    private static final String KEY_MOBILE_SSH_PRIVATE = "mobile_ssh_private_key";
+    private static final String KEY_MOBILE_SSH_PUBLIC = "mobile_ssh_public_key";
     public static final String DEFAULT_ENDPOINT = "https://exe.dev/exec";
 
     private AppSettings() {}
@@ -37,6 +39,14 @@ public final class AppSettings {
 
     public static boolean hasToken(Context context) {
         return !token(context).isEmpty();
+    }
+
+    public static void logout(Context context) {
+        prefs(context).edit()
+                .remove(KEY_TOKEN)
+                .remove(KEY_MOBILE_SSH_PRIVATE)
+                .remove(KEY_MOBILE_SSH_PUBLIC)
+                .apply();
     }
 
     public static Palette palette(Context context) {

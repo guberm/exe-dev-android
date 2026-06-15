@@ -24,7 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class SettingsActivity extends Activity {
-    private static final String TOKEN_COMMAND = "ssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new --exp=30d";
+    private static final String TOKEN_COMMAND = "ssh exe.dev ssh-key generate-api-key \"--cmds=whoami,ls,new,ssh-key add,ssh-key list\" --exp=30d";
     private static final String API_DOCS_URL = "https://exe.dev/docs/https-api";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -49,12 +49,14 @@ public class SettingsActivity extends Activity {
 
         LinearLayout wizard = Ui.card(this);
         wizard.addView(Ui.text(this, "3-step login wizard", 19, p.text, Typeface.BOLD));
-        wizard.addView(Ui.text(this, "Step 1 - On your computer, open Terminal and make sure this works:", 14, p.muted, Typeface.NORMAL));
+        wizard.addView(Ui.text(this, "Step 1 - Best option: tap Login via SSH on this phone and complete exe.dev signup here. Fallback if you already have a trusted computer:", 14, p.muted, Typeface.NORMAL));
         wizard.addView(codeBlock(TOKEN_COMMAND));
         wizard.addView(Ui.text(this, "Step 2 - Copy the token printed by exe.dev. It usually starts with exe1. or exe0. Do not send it in chat - it works like a password.", 14, p.muted, Typeface.NORMAL));
         wizard.addView(Ui.text(this, "Step 3 - Paste the token below, keep the default endpoint, then tap Save and test login.", 14, p.muted, Typeface.NORMAL));
-        Button copyCommand = Ui.button(this, "Copy terminal command", true);
+        Button phoneLogin = Ui.button(this, "Login via SSH on this phone", true);
+        Button copyCommand = Ui.button(this, "Copy terminal command", false);
         Button openDocs = Ui.button(this, "Open exe.dev API docs", false);
+        wizard.addView(phoneLogin);
         wizard.addView(copyCommand);
         wizard.addView(openDocs);
         root.addView(wizard);
@@ -78,6 +80,7 @@ public class SettingsActivity extends Activity {
         troubleshooting.addView(Ui.text(this, "- Check that you pasted the entire token, with no spaces before or after it.\n- Generate a fresh token if the old one expired.\n- The default endpoint should stay https://exe.dev/exec.\n- If you restricted token permissions, allow at least whoami, ls, and new.", 14, p.muted, Typeface.NORMAL));
         root.addView(troubleshooting);
 
+        phoneLogin.setOnClickListener(v -> startActivity(new Intent(this, PhoneLoginActivity.class)));
         copyCommand.setOnClickListener(v -> copy("exe.dev token command", TOKEN_COMMAND));
         openDocs.setOnClickListener(v -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(API_DOCS_URL))));
         paste.setOnClickListener(v -> pasteToken());

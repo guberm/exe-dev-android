@@ -8,6 +8,12 @@
         android:label="exe.dev"
         android:theme="@style/AppTheme">
         <activity
+            android:name=".PhoneLoginActivity"
+            android:exported="false" />
+        <activity
+            android:name=".TerminalActivity"
+            android:exported="false" />
+        <activity
             android:name=".SettingsActivity"
             android:exported="false" />
         <activity
