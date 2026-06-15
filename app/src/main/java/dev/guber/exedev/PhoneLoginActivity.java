@@ -34,6 +34,7 @@ import java.util.regex.Pattern;
 public class PhoneLoginActivity extends Activity {
     private static final String KEY_PRIVATE = "mobile_ssh_private_key";
     private static final String KEY_PUBLIC = "mobile_ssh_public_key";
+    private static final int MAX_TRANSCRIPT_CHARS = 24000;
     private static final String TOKEN_COMMAND = "ssh-key generate-api-key \"--cmds=whoami,ls,new,ssh-key add,ssh-key list\" --exp=30d";
     private static final Pattern TOKEN_PATTERN = Pattern.compile("\\bexe[01]\\.[A-Za-z0-9._~+/=-]{20,}\\b");
 
@@ -153,7 +154,7 @@ public class PhoneLoginActivity extends Activity {
                 s.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
                 s.connect(20000);
                 ChannelShell ch = (ChannelShell) s.openChannel("shell");
-                ch.setPtyType("xterm");
+                ch.setPtyType("dumb");
                 ch.setPtySize(120, 36, 960, 720);
                 InputStream shellOutput = ch.getInputStream();
                 OutputStream shellIn = ch.getOutputStream();
@@ -242,8 +243,13 @@ public class PhoneLoginActivity extends Activity {
     }
 
     private void append(String text) {
+        if (text == null || text.isEmpty()) return;
         transcript.append(text);
-        output.append(text);
+        if (transcript.length() > MAX_TRANSCRIPT_CHARS) {
+            transcript.delete(0, transcript.length() - MAX_TRANSCRIPT_CHARS);
+            if (transcript.length() > 0) transcript.insert(0, "... output truncated ...\n");
+        }
+        output.setText(trimConsecutiveBlankLines(transcript.toString()));
         maybeSaveToken();
     }
 
@@ -280,12 +286,39 @@ public class PhoneLoginActivity extends Activity {
                 .show();
     }
 
+    private static String trimConsecutiveBlankLines(String value) {
+        if (value == null) return "";
+        return value.replaceAll("\\n{4,}", "\\n\\n\\n");
+    }
+
     private static String sanitizeTerminalOutput(String value) {
         if (value == null) return "";
-        return value
+        String cleaned = value
                 .replaceAll("\\u001B\\[[0-9;?]*[ -/]*[@-~]", "")
                 .replaceAll("\\u001B\\][^\\u0007]*(\\u0007|\\u001B\\\\)", "")
                 .replace('\r', '\n');
+        StringBuilder out = new StringBuilder();
+        boolean lastBlank = false;
+        for (String line : cleaned.split("\\n", -1)) {
+            if (isDecorativeExeBannerLine(line)) continue;
+            boolean blank = line.trim().isEmpty();
+            if (blank && lastBlank) continue;
+            out.append(line).append('\n');
+            lastBlank = blank;
+        }
+        return out.toString();
+    }
+
+    private static boolean isDecorativeExeBannerLine(String line) {
+        if (line == null) return false;
+        String trimmed = line.trim();
+        if (trimmed.isEmpty()) return false;
+        int decorative = 0;
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if ("█╔╗╚╝═║╩╦╠╣╬▀▄▌▐".indexOf(c) >= 0) decorative++;
+        }
+        return decorative >= 4 || (decorative > 0 && decorative >= trimmed.length() / 3);
     }
 
     private static String text(EditText et) {
