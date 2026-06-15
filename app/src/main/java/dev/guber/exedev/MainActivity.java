@@ -75,7 +75,7 @@ public class MainActivity extends Activity {
 
         LinearLayout existing = Ui.card(this);
         existing.addView(Ui.text(this, "Existing VMs", 19, p.text, Typeface.BOLD));
-        existing.addView(Ui.text(this, "Refresh your VM list, then copy the SSH command or open the HTTPS URL for a selected machine.", 14, p.muted, Typeface.NORMAL));
+        existing.addView(Ui.text(this, "Refresh your VM list, then copy the SSH command, copy a port 8000 setup command, or open the HTTPS URL for a selected machine.", 14, p.muted, Typeface.NORMAL));
         Button refresh = Ui.button(this, "Refresh VMs", true);
         existing.addView(refresh);
         vmList = new LinearLayout(this);
@@ -132,7 +132,11 @@ public class MainActivity extends Activity {
                 List<ApiClient.Vm> vms = new ApiClient(this).listVms();
                 main.post(() -> renderVms(vms));
             } catch (Exception e) {
-                main.post(() -> setListMessage("Could not load VMs: " + e.getMessage()));
+                main.post(() -> {
+                    String formatted = formatError(e);
+                    setListMessage("Could not load VMs: " + formatted);
+                    showPopup("Could not load VMs", formatted);
+                });
             }
         });
     }
@@ -156,9 +160,9 @@ public class MainActivity extends Activity {
                 + "\nSSH: " + sshCommand(vm)
                 + (vm.httpsUrl == null || vm.httpsUrl.isEmpty() ? "" : "\nHTTPS: " + vm.httpsUrl);
         row.addView(Ui.text(this, info, 14, p.muted, Typeface.NORMAL));
-        row.addView(Ui.text(this, "HTTPS opens exe.dev's default web preview, which dials port 8000. If you see 'Port 8000 unbound', start a web server on the VM first. The preview-server button below creates a tiny systemd service that serves a basic test page on port 8000.", 13, p.muted, Typeface.NORMAL));
+        row.addView(Ui.text(this, "HTTPS opens exe.dev's default web preview, which dials port 8000. If you see 'Port 8000 unbound', run a web server on the VM first. The setup button below copies a terminal command because exe.dev's HTTPS API cannot run SSH-session commands inside a VM.", 13, p.muted, Typeface.NORMAL));
         Button copySsh = Ui.button(this, "Copy SSH command", true);
-        Button startPreview = Ui.button(this, "Start port 8000 preview server", false);
+        Button startPreview = Ui.button(this, "Copy port 8000 setup command", false);
         Button openWeb = Ui.button(this, "Open HTTPS preview", false);
         Button details = Ui.button(this, "Copy VM JSON", false);
         row.addView(copySsh); row.addView(startPreview); row.addView(openWeb); row.addView(details);
@@ -187,20 +191,26 @@ public class MainActivity extends Activity {
     private void startPreviewServer(ApiClient.Vm vm) {
         String target = sshTarget(vm);
         if (target.isEmpty()) {
-            setStatus("Cannot start preview server: this VM has no name or SSH destination in the API response.");
+            String message = "Cannot prepare preview setup: this VM has no name or SSH destination in the API response.";
+            setStatus(message);
+            showPopup("Missing SSH target", message);
             return;
         }
-        String script = "mkdir -p /opt/exe-preview"
-                + " && printf '%s\\n' '<!doctype html><html><head><title>exe.dev preview</title></head><body><h1>exe.dev preview is running</h1><p>Started from the Android app on port 8000.</p></body></html>' > /opt/exe-preview/index.html"
+        String script = previewServerScript();
+        String cmd = "ssh " + ApiClient.shellQuote(target) + " sudo sh -lc " + ApiClient.shellQuote(script);
+        copy("Port 8000 setup command", cmd);
+        String message = "Copied the port 8000 setup command.\n\nexe.dev's HTTPS API cannot run the ssh command inside a VM; it returns HTTP 422 because that requires a real SSH session.\n\nRun the copied command in a terminal where ssh exe.dev works, then come back and tap Open HTTPS preview.";
+        setStatus("Port 8000 setup command copied for " + target + ". Run it in a terminal, then open the HTTPS preview.");
+        showPopup("Setup command copied", message + "\n\nCommand:\n" + cmd);
+    }
+
+    private String previewServerScript() {
+        return "mkdir -p /opt/exe-preview"
+                + " && printf '%s\\n' '<!doctype html><html><head><title>exe.dev preview</title></head><body><h1>exe.dev preview is running</h1><p>Started from the Android app setup command on port 8000.</p></body></html>' > /opt/exe-preview/index.html"
                 + " && printf '%s\\n' '[Unit]' 'Description=exe.dev Android preview server' 'After=network.target' '' '[Service]' 'WorkingDirectory=/opt/exe-preview' 'ExecStart=/usr/bin/python3 -m http.server 8000 --bind 0.0.0.0' 'Restart=always' '' '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/exe-preview.service"
                 + " && systemctl daemon-reload"
                 + " && systemctl enable --now exe-preview.service"
                 + " && systemctl is-active exe-preview.service";
-        String cmd = "ssh " + ApiClient.shellQuote(target) + " sh -lc " + ApiClient.shellQuote(script);
-        runTask("Starting preview server on " + target + ":8000...", () -> new ApiClient(this).exec(cmd), result -> {
-            setStatus("Preview server started on port 8000. Now tap Open HTTPS preview. Response: " + shorten(result, 220));
-            refreshVms();
-        });
     }
 
     private interface ThrowingSupplier { String get() throws Exception; }
@@ -226,7 +236,10 @@ public class MainActivity extends Activity {
         if (e instanceof ApiClient.ApiException) {
             ApiClient.ApiException api = (ApiClient.ApiException) e;
             if (api.statusCode == 403) {
-                return "HTTP 403: this token is not allowed to run that exe.dev command.\n\nFor the port 8000 preview helper, generate a new token with the ssh command allowed:\n\nssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new,ssh --exp=30d\n\nThen paste it in Login / Settings.";
+                return "HTTP 403: this token is not allowed to run that exe.dev command.\n\nGenerate a token with these API commands allowed:\n\nssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new --exp=30d\n\nThen paste it in Login / Settings.";
+            }
+            if (api.statusCode == 422 && e.getMessage() != null && e.getMessage().toLowerCase().contains("ssh")) {
+                return "HTTP 422: exe.dev's HTTPS API cannot run ssh commands inside a VM. That requires a real SSH session. Use the port 8000 setup button to copy a terminal command, run it where ssh exe.dev works, then open the HTTPS preview.";
             }
         }
         return e.getMessage() == null ? e.toString() : e.getMessage();
@@ -236,6 +249,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setMessage(message)
+                .setNeutralButton("Copy", (dialog, which) -> copy(title + " details", title + "\n\n" + message))
                 .setPositiveButton("OK", null)
                 .show();
     }

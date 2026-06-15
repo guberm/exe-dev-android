@@ -24,7 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class SettingsActivity extends Activity {
-    private static final String TOKEN_COMMAND = "ssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new,ssh --exp=30d";
+    private static final String TOKEN_COMMAND = "ssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new --exp=30d";
     private static final String API_DOCS_URL = "https://exe.dev/docs/https-api";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -158,6 +158,9 @@ public class SettingsActivity extends Activity {
             if (api.statusCode == 403) {
                 return "HTTP 403: this token is valid, but it is not allowed to run the requested exe.dev command. Generate a new token with the command shown in Step 1, then paste it here.";
             }
+            if (api.statusCode == 422 && e.getMessage() != null && e.getMessage().toLowerCase().contains("ssh")) {
+                return "HTTP 422: exe.dev's HTTPS API cannot run ssh commands inside a VM. VM shell commands require a real SSH session.";
+            }
         }
         return (e.getMessage() == null ? e.toString() : e.getMessage()) + "\n\nCheck the token, endpoint, and token permissions.";
     }
@@ -166,6 +169,7 @@ public class SettingsActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setMessage(message)
+                .setNeutralButton("Copy", (dialog, which) -> copy(title + " details", title + "\n\n" + message))
                 .setPositiveButton("OK", null)
                 .show();
     }

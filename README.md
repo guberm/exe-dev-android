@@ -11,7 +11,8 @@ A small native Android client for [exe.dev](https://exe.dev/) with an English UI
 - Copy SSH connection commands for existing VMs.
 - Open VM HTTPS URLs when the API returns one.
 - Explain exe.dev's default port 8000 preview behavior.
-- Start a tiny Python/systemd preview server on port 8000 for the default HTTPS preview page.
+- Copy a terminal command that starts a tiny Python/systemd preview server on port 8000.
+- Error and setup dialogs include a **Copy** button for sending diagnostics or commands elsewhere.
 - Includes a custom vector/adaptive launcher icon.
 
 ## Authentication
@@ -23,7 +24,7 @@ The Android app includes a 3-step login wizard:
 1. On a trusted computer where `ssh exe.dev` works, run:
 
    ```bash
-   ssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new,ssh --exp=30d
+   ssh exe.dev ssh-key generate-api-key --cmds=whoami,ls,new --exp=30d
    ```
 
 2. Copy the returned token. It usually starts with `exe1.` or `exe0.`. Treat it like a password.
@@ -34,9 +35,8 @@ For least privilege, create short-lived tokens and restrict commands if you do n
 - `whoami` for login testing
 - `ls` for VM listing
 - `new` for VM creation
-- `ssh` for the optional **Start port 8000 preview server** helper on an existing VM
 
-If you already generated an older token without `ssh`, VM listing and creation may still work, but the preview helper will show HTTP 403. Generate a new token with the command above and paste it into **Login / Settings**.
+The app does not run `ssh <vm> ...` through the HTTPS API. exe.dev returns HTTP 422 for that because VM shell commands require a real SSH session. The port 8000 setup button copies a terminal command instead; run it in a terminal where `ssh exe.dev` works, then tap **Open HTTPS preview**.
 
 ## Build
 
