@@ -11,6 +11,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -47,6 +48,7 @@ public class PhoneLoginActivity extends Activity {
     private Button connectButton;
     private Button sendButton;
     private Button tokenButton;
+    private Button copyBearerTokenButton;
 
     private volatile Session session;
     private volatile ChannelShell channel;
@@ -92,10 +94,12 @@ public class PhoneLoginActivity extends Activity {
         controls.addView(sshUser);
         connectButton = Ui.button(this, "Connect to ssh exe.dev", true);
         tokenButton = Ui.button(this, "Generate and save API token", false);
+        copyBearerTokenButton = Ui.button(this, "Copy saved bearer token", false);
         Button copyPublic = Ui.button(this, "Copy mobile public key", false);
         Button disconnect = Ui.button(this, "Disconnect", false);
         controls.addView(connectButton);
         controls.addView(tokenButton);
+        controls.addView(copyBearerTokenButton);
         controls.addView(copyPublic);
         controls.addView(disconnect);
         root.addView(controls);
@@ -122,6 +126,7 @@ public class PhoneLoginActivity extends Activity {
         connectButton.setOnClickListener(v -> connect());
         sendButton.setOnClickListener(v -> sendTypedInput());
         tokenButton.setOnClickListener(v -> sendLine(buildTokenCommand()));
+        copyBearerTokenButton.setOnClickListener(v -> copySavedBearerToken());
         copyPublic.setOnClickListener(v -> {
             try {
                 ensureKeyPair();
@@ -134,6 +139,28 @@ public class PhoneLoginActivity extends Activity {
         copyOutput.setOnClickListener(v -> copy("Phone login output", transcript.toString()));
 
         setContentView(scroll);
+        refreshBearerTokenButton(false);
+    }
+
+    private void refreshBearerTokenButton(boolean connected) {
+        if (copyBearerTokenButton == null) return;
+        boolean hasToken = hasSavedBearerToken();
+        copyBearerTokenButton.setVisibility((connected || hasToken) ? View.VISIBLE : View.GONE);
+        copyBearerTokenButton.setText(hasToken ? "Copy saved bearer token" : "Copy bearer token (none yet)");
+    }
+
+    private boolean hasSavedBearerToken() {
+        String token = AppSettings.token(this);
+        return token.startsWith("exe0.") || token.startsWith("exe1.");
+    }
+
+    private void copySavedBearerToken() {
+        String token = AppSettings.token(this);
+        if (!hasSavedBearerToken()) {
+            showPopup("No bearer token yet", "Finish exe.dev login, then tap Generate and save API token. When the token appears, this button will copy it.");
+            return;
+        }
+        copy("Bearer token", token);
     }
 
     private void connect() {
@@ -162,7 +189,10 @@ public class PhoneLoginActivity extends Activity {
                 session = s;
                 channel = ch;
                 shellInput = shellIn;
-                main.post(() -> append("Connected. Follow exe.dev prompts below.\n"));
+                main.post(() -> {
+                    append("Connected. Follow exe.dev prompts below.\n");
+                    refreshBearerTokenButton(true);
+                });
                 readLoop(shellOutput);
             } catch (Exception e) {
                 main.post(() -> {
@@ -264,7 +294,8 @@ public class PhoneLoginActivity extends Activity {
         while (m.find()) token = m.group();
         if (token == null || token.equals(AppSettings.token(this))) return;
         AppSettings.save(this, AppSettings.DEFAULT_ENDPOINT, token);
-        showPopup("API token saved", "The app found an exe.dev API token in the SSH output and saved it. You can go back and manage VMs from the phone.");
+        refreshBearerTokenButton(true);
+        showPopup("API token saved", "The app found an exe.dev API token in the SSH output and saved it. Tap Copy saved bearer token if you need to paste it elsewhere, or go back and manage VMs from the phone.");
     }
 
     private void disconnect() {
@@ -273,7 +304,10 @@ public class PhoneLoginActivity extends Activity {
         channel = null;
         session = null;
         shellInput = null;
-        main.post(() -> connectButton.setEnabled(true));
+        main.post(() -> {
+            connectButton.setEnabled(true);
+            refreshBearerTokenButton(false);
+        });
     }
 
     private void copy(String label, String value) {

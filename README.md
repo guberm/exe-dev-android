@@ -13,7 +13,7 @@ A small native Android client for [exe.dev](https://exe.dev/) with an English UI
 - Explain exe.dev's default port 8000 preview behavior.
 - Copy a terminal command that starts a tiny Python/systemd preview server on port 8000.
 - Use the built-in SSH terminal to generate/register a mobile SSH key and run commands on a VM from Android.
-- Log in without a computer via **Login via SSH on this phone**, which opens an interactive `ssh exe.dev` flow, lets the user complete email/code prompts, then generates and saves the API token. The phone terminal filters exe.dev's animated banner so it does not create an endless scroll of repeated logo frames.
+- Log in without a computer via **Login via SSH on this phone**, which opens an interactive `ssh exe.dev` flow, lets the user complete email/code prompts, then generates and saves the API token. The phone terminal includes a **Copy saved bearer token** button after connect/token-save and filters exe.dev's animated banner so it does not create an endless scroll of repeated logo frames.
 - Error and setup dialogs include a **Copy** button for sending diagnostics or commands elsewhere.
 - Show a **Logout** button only when logged in; logout removes the saved API token and the app-generated mobile SSH key.
 - Includes a custom vector/adaptive launcher icon.
