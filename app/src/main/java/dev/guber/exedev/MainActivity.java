@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -197,20 +198,34 @@ public class MainActivity extends Activity {
             return;
         }
         String script = previewServerScript();
-        String cmd = "ssh " + ApiClient.shellQuote(target) + " sudo sh -lc " + ApiClient.shellQuote(script);
+        String encoded = Base64.encodeToString(script.getBytes(java.nio.charset.StandardCharsets.UTF_8), Base64.NO_WRAP);
+        String cmd = "ssh " + target + " \"echo " + encoded + " | base64 -d | sudo sh\"";
         copy("Port 8000 setup command", cmd);
-        String message = "Copied the port 8000 setup command.\n\nexe.dev's HTTPS API cannot run the ssh command inside a VM; it returns HTTP 422 because that requires a real SSH session.\n\nRun the copied command in a terminal where ssh exe.dev works, then come back and tap Open HTTPS preview.";
-        setStatus("Port 8000 setup command copied for " + target + ". Run it in a terminal, then open the HTTPS preview.");
+        String message = "Copied the port 8000 setup command.\n\nThis version uses base64 so the command can be pasted into Windows PowerShell without breaking on HTML characters or quotes.\n\nRun the copied command in a terminal where ssh exe.dev works, then come back and tap Open HTTPS preview.";
+        setStatus("PowerShell-safe port 8000 setup command copied for " + target + ". Run it in a terminal, then open the HTTPS preview.");
         showPopup("Setup command copied", message + "\n\nCommand:\n" + cmd);
     }
 
     private String previewServerScript() {
-        return "mkdir -p /opt/exe-preview"
-                + " && printf '%s\\n' '<!doctype html><html><head><title>exe.dev preview</title></head><body><h1>exe.dev preview is running</h1><p>Started from the Android app setup command on port 8000.</p></body></html>' > /opt/exe-preview/index.html"
-                + " && printf '%s\\n' '[Unit]' 'Description=exe.dev Android preview server' 'After=network.target' '' '[Service]' 'WorkingDirectory=/opt/exe-preview' 'ExecStart=/usr/bin/python3 -m http.server 8000 --bind 0.0.0.0' 'Restart=always' '' '[Install]' 'WantedBy=multi-user.target' > /etc/systemd/system/exe-preview.service"
-                + " && systemctl daemon-reload"
-                + " && systemctl enable --now exe-preview.service"
-                + " && systemctl is-active exe-preview.service";
+        return "set -e\n"
+                + "mkdir -p /opt/exe-preview\n"
+                + "cat > /opt/exe-preview/index.html <<'HTML'\n"
+                + "<!doctype html><html><head><title>exe.dev preview</title></head><body><h1>exe.dev preview is running</h1><p>Started from the Android app setup command on port 8000.</p></body></html>\n"
+                + "HTML\n"
+                + "cat > /etc/systemd/system/exe-preview.service <<'UNIT'\n"
+                + "[Unit]\n"
+                + "Description=exe.dev Android preview server\n"
+                + "After=network.target\n\n"
+                + "[Service]\n"
+                + "WorkingDirectory=/opt/exe-preview\n"
+                + "ExecStart=/usr/bin/python3 -m http.server 8000 --bind 0.0.0.0\n"
+                + "Restart=always\n\n"
+                + "[Install]\n"
+                + "WantedBy=multi-user.target\n"
+                + "UNIT\n"
+                + "systemctl daemon-reload\n"
+                + "systemctl enable --now exe-preview.service\n"
+                + "systemctl is-active exe-preview.service\n";
     }
 
     private interface ThrowingSupplier { String get() throws Exception; }
@@ -249,7 +264,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setMessage(message)
-                .setNeutralButton("Copy", (dialog, which) -> copy(title + " details", title + "\n\n" + message))
+                .setNegativeButton("COPY", (dialog, which) -> copy(title + " details", title + "\n\n" + message))
                 .setPositiveButton("OK", null)
                 .show();
     }

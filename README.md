@@ -36,7 +36,7 @@ For least privilege, create short-lived tokens and restrict commands if you do n
 - `ls` for VM listing
 - `new` for VM creation
 
-The app does not run `ssh <vm> ...` through the HTTPS API. exe.dev returns HTTP 422 for that because VM shell commands require a real SSH session. The port 8000 setup button copies a terminal command instead; run it in a terminal where `ssh exe.dev` works, then tap **Open HTTPS preview**.
+The app does not run `ssh <vm> ...` through the HTTPS API. exe.dev returns HTTP 422 for that because VM shell commands require a real SSH session. The port 8000 setup button copies a PowerShell-safe `ssh ... "echo <base64> | base64 -d | sudo sh"` terminal command instead; run it in a terminal where `ssh exe.dev` works, then tap **Open HTTPS preview**.
 
 ## Build
 

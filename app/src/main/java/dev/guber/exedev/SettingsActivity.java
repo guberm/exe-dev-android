@@ -169,7 +169,7 @@ public class SettingsActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setMessage(message)
-                .setNeutralButton("Copy", (dialog, which) -> copy(title + " details", title + "\n\n" + message))
+                .setNegativeButton("COPY", (dialog, which) -> copy(title + " details", title + "\n\n" + message))
                 .setPositiveButton("OK", null)
                 .show();
     }
