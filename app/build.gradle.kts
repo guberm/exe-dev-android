@@ -10,8 +10,8 @@ android {
         applicationId = "dev.guber.exedev"
         minSdk = 23
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.2.1"
+        versionCode = 13
+        versionName = "1.2.2"
     }
 }
 

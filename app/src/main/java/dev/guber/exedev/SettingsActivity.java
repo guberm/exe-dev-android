@@ -24,7 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class SettingsActivity extends Activity {
-    private static final String TOKEN_COMMAND = "ssh exe.dev ssh-key generate-api-key \"--cmds=whoami,ls,new,ssh-key add,ssh-key list\" --exp=30d";
+    private static final String TOKEN_COMMAND = "ssh exe.dev ssh-key generate-api-key --label=android-phone-$(date +%s) \"--cmds=whoami,ls,new,ssh-key add,ssh-key list\" --exp=30d";
     private static final String API_DOCS_URL = "https://exe.dev/docs/https-api";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();

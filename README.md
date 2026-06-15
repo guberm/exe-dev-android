@@ -35,7 +35,7 @@ Fallback for an already trusted computer:
 1. On a trusted computer where `ssh exe.dev` works, run:
 
    ```bash
-   ssh exe.dev ssh-key generate-api-key "--cmds=whoami,ls,new,ssh-key add,ssh-key list" --exp=30d
+   ssh exe.dev ssh-key generate-api-key --label=android-phone-$(date +%s) "--cmds=whoami,ls,new,ssh-key add,ssh-key list" --exp=30d
    ```
 
 2. Copy the returned token. It usually starts with `exe1.` or `exe0.`. Treat it like a password.

@@ -35,7 +35,7 @@ public class PhoneLoginActivity extends Activity {
     private static final String KEY_PRIVATE = "mobile_ssh_private_key";
     private static final String KEY_PUBLIC = "mobile_ssh_public_key";
     private static final int MAX_TRANSCRIPT_CHARS = 24000;
-    private static final String TOKEN_COMMAND = "ssh-key generate-api-key \"--cmds=whoami,ls,new,ssh-key add,ssh-key list\" --exp=30d";
+    private static final String TOKEN_COMMAND_FLAGS = "\"--cmds=whoami,ls,new,ssh-key add,ssh-key list\" --exp=30d";
     private static final Pattern TOKEN_PATTERN = Pattern.compile("\\bexe[01]\\.[A-Za-z0-9._~+/=-]{20,}\\b");
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -121,7 +121,7 @@ public class PhoneLoginActivity extends Activity {
 
         connectButton.setOnClickListener(v -> connect());
         sendButton.setOnClickListener(v -> sendTypedInput());
-        tokenButton.setOnClickListener(v -> sendLine(TOKEN_COMMAND));
+        tokenButton.setOnClickListener(v -> sendLine(buildTokenCommand()));
         copyPublic.setOnClickListener(v -> {
             try {
                 ensureKeyPair();
@@ -199,6 +199,11 @@ public class PhoneLoginActivity extends Activity {
         String value = input.getText() == null ? "" : input.getText().toString();
         input.setText("");
         sendLine(value);
+    }
+
+    private String buildTokenCommand() {
+        String label = "android-phone-" + System.currentTimeMillis();
+        return "ssh-key generate-api-key --label=" + label + " " + TOKEN_COMMAND_FLAGS;
     }
 
     private void sendLine(String value) {
